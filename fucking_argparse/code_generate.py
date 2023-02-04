@@ -1,7 +1,10 @@
 """Core package for code generate"""
+import builtins
+import re
 from argparse import Namespace
+from collections import defaultdict
 from pathlib import Path
-from typing import Optional, overload
+from typing import Any, DefaultDict, Optional, overload
 
 CODE_TEMPLATE = """from dataclasses import dataclass
 
@@ -33,19 +36,17 @@ def gen_codes(
     class_name: str = "Arguments",
     file_path: Optional[str | Path] = None,
     exist_ok: bool = False,
-    tabszie: int = 4,
+    tabsize: int = 4,
 ):
     """use to generate dataclass codes"""
     code_str = CODE_TEMPLATE
     code_str += f"{class_name}:\n"
-    tab_str = " " * tabszie
+    module_list: list[list[str]] = []
     for key, value in args.__dict__.items():
-        value_type = type(value)
-        code_str += f"{tab_str}{key}: {value_type.__name__} = "
-        if value_type is str:
-            code_str += f'"{value}"\n'
-        else:
-            code_str += f"{value}\n"
+        line_str, module_dir = type_formatter(key, value, tabsize=tabsize)
+        code_str += line_str
+        module_list.append(module_dir)
+    code_str = import_formatter(module_list) + code_str
 
     if file_path is None:
         return code_str
@@ -60,3 +61,35 @@ def gen_codes(
 
     with open(file_path, "w", encoding="utf-8") as file:
         file.write(code_str)
+
+
+def type_formatter(key: str, value: Any, tabsize: int = 4):
+    value_type = type(value)
+    tab_str = " " * tabsize
+    code_line = f"{tab_str}{key}: {value_type.__name__} = "
+    if value_type is str:
+        code_line += f'"{value}"\n'
+    else:
+        code_line += f"{repr(value)}\n"
+
+    matches = re.findall(r"class '(.*)'", str(value_type))
+    module_dir: list[str] = matches[0].split(".")
+    return code_line, module_dir
+
+
+def import_formatter(module_list: list[list[str]]):
+    import_dict: DefaultDict[str] = defaultdict(set)
+    for item in module_list:
+        prefix_str = ".".join(item[:-1])
+        import_dict[prefix_str].add(item[-1])
+    import_str = ""
+
+    for key, values in import_dict.items():
+        if key == "":
+            values = [val for val in values if val not in dir(builtins)]
+            for val in values:
+                import_str += f"import {val}\n"
+        else:
+            import_str += f"from {key} import {', '.join(values)}\n"
+
+    return import_str
