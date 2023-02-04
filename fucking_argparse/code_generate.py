@@ -1,13 +1,13 @@
 """Core package for code generate"""
 import builtins
+import importlib
 import re
 from argparse import Namespace
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, DefaultDict, Optional, overload
 
-CODE_TEMPLATE = """from dataclasses import dataclass
-
+CODE_TEMPLATE = """
 
 @dataclass()
 class """
@@ -19,6 +19,7 @@ def gen_codes(
     class_name: str = "Arguments",
     file_path: str | Path = "./arguments.py",
     exist_ok: bool = False,
+    autoformat: bool = True,
 ) -> None:
     ...
 
@@ -27,6 +28,7 @@ def gen_codes(
 def gen_codes(
     args: Namespace,
     class_name: str = "Arguments",
+    autoformat: bool = True,
 ) -> str:
     ...
 
@@ -37,16 +39,24 @@ def gen_codes(
     file_path: Optional[str | Path] = None,
     exist_ok: bool = False,
     tabsize: int = 4,
+    autoformat: bool = True,
 ):
     """use to generate dataclass codes"""
     code_str = CODE_TEMPLATE
     code_str += f"{class_name}:\n"
     module_list: list[list[str]] = []
+    module_list.append(["dataclasses", "dataclass"])
     for key, value in args.__dict__.items():
         line_str, module_dir = type_formatter(key, value, tabsize=tabsize)
         code_str += line_str
         module_list.append(module_dir)
     code_str = import_formatter(module_list) + code_str
+
+    if autoformat:
+        if importlib.util.find_spec("black") is not None:
+            import black  # pylint: disable=C0415
+
+            code_str = black.format_str(code_str, mode=black.Mode())
 
     if file_path is None:
         return code_str
